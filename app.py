@@ -33,7 +33,7 @@ smartbill_file = st.file_uploader("Fișier SmartBill (.xlsx, .xls)", type=["xlsx
 
 if apex_file and smartbill_file:
     apex_df = pd.read_csv(apex_file)
-  apex_df.columns = apex_df.columns.str.strip().str.lower()
+    apex_df.columns = apex_df.columns.str.strip().str.lower()
 
     smart_df = pd.read_excel(smartbill_file)
     smart_df.columns = smart_df.columns.str.strip().str.lower()
