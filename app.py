@@ -10,7 +10,7 @@ def split_codes(code: str):
     parts = [p.strip() for p in str(code).split("/") if p.strip()]
     if len(parts) <= 1:
         return parts
-    m = re.match(r"^(.+?-)", parts[0])      # prefixul înainte de primul '-'
+    m = re.match(r"^(.+?-)", parts[0])  # prefixul înainte de primul „-”
     prefix = m.group(1) if m else ""
     codes = [parts[0]]
     for p in parts[1:]:
@@ -19,7 +19,7 @@ def split_codes(code: str):
 
 
 def normalize_apex(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.dropna(how="all").dropna(axis=1, how="all")          # elimină linii/coloane goale
+    df = df.dropna(how="all").dropna(axis=1, how="all")  # elimină rânduri/coloane goale
     df.columns = [str(c).strip().lower() for c in df.columns]
     required = {"cod", "nume", "disponibil", "pret"}
     missing = required - set(df.columns)
@@ -41,10 +41,11 @@ def normalize_apex(df: pd.DataFrame) -> pd.DataFrame:
 
 def parse_smartbill(file) -> pd.DataFrame:
     sb = pd.read_excel(file, header=None)
-    sb = sb.iloc[9:]                       # ignoră primele 9 rânduri
-    sb.columns = sb.iloc[0]                # rândul 10 devine antet
+    sb = sb.iloc[9:]                    # ignoră primele 9 rânduri
+    sb.columns = sb.iloc[0]             # rândul 10 devine antet
     sb = sb[1:]
-    sb = sb.rename(columns=str.lower)
+    sb.columns = [str(c).strip().lower() for c in sb.columns]
+    sb = sb.rename(columns={"produs": "cod"})
     sb = sb[["cod", "iesiri", "stoc final"]]
     sb["iesiri"] = pd.to_numeric(sb["iesiri"], errors="coerce").fillna(0)
     sb["stoc final"] = pd.to_numeric(sb["stoc final"], errors="coerce").fillna(0)
@@ -67,6 +68,17 @@ def main():
         except ValueError as e:
             st.error(str(e))
             return
+
+        # 1.1: exportă APEX normalizat în CSV și folosește-l mai departe
+        csv_bytes = apex_df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "Descarcă APEX normalizat (CSV)",
+            data=csv_bytes,
+            file_name="apex_normalizat.csv",
+            mime="text/csv",
+        )
+        apex_df = pd.read_csv(io.BytesIO(csv_bytes))
+
         smartbill_df = parse_smartbill(smartbill_file)
 
         result = (
