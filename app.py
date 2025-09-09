@@ -21,11 +21,22 @@ def split_codes(code: str):
 def normalize_apex(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(how="all").dropna(axis=1, how="all")  # elimină rânduri/coloane goale
     df.columns = [str(c).strip().lower() for c in df.columns]
-    required = {"cod", "nume", "disponibil", "pret"}
-    missing = required - set(df.columns)
+    aliases = {
+        "cod": {"cod", "product code"},
+        "nume": {"nume", "descriere"},
+        "disponibil": {"disponibil", "stock"},
+        "pret": {"pret", "price"},
+    }
+    normalized_cols = {}
+    for key, names in aliases.items():
+        for name in names:
+            if name in df.columns:
+                normalized_cols[name] = key
+                break
+    missing = [k for k in aliases if k not in normalized_cols.values()]
     if missing:
         raise ValueError(f"Lipsesc coloanele necesare din APEX: {', '.join(missing)}")
-    df = df[list(required)]
+    df = df.rename(columns=normalized_cols)[list(aliases.keys())]
     df["pret"] = pd.to_numeric(df["pret"], errors="coerce").fillna(0) * 5.1
 
     rows = []
