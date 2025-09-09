@@ -33,17 +33,16 @@ smartbill_file = st.file_uploader("Fișier SmartBill (.xlsx, .xls)", type=["xlsx
 
 if apex_file and smartbill_file:
     apex_df = pd.read_csv(apex_file)
-    if smartbill_file.name.endswith(".xls"):
-        smart_df = pd.read_excel(smartbill_file, engine="xlrd")
-    else:
-        smart_df = pd.read_excel(smartbill_file, engine="openpyxl")
+  apex_df.columns = apex_df.columns.str.strip().str.lower()
 
-    merged = (
-        apex_df.merge(
-            smart_df[["cod", "iesiri", "stoc final"]],
-            on="cod",
-            how="left",
-        )
+    smart_df = pd.read_excel(smartbill_file)
+    smart_df.columns = smart_df.columns.str.strip().str.lower()
+    st.write(smart_df.columns.tolist())
+
+    merged = apex_df.merge(
+        smart_df.loc[:, ["cod", "iesiri", "stoc final"]],
+        on="cod",
+        how="left",
     )
     merged["comanda"] = merged.apply(compute_order, axis=1)
 
