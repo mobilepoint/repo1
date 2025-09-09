@@ -1,63 +1,83 @@
-import io
-import re
 import pandas as pd
-from openpyxl import load_workbook
-import streamlit as st
+import re
+import math
 
-def remove_images_to_buffer(uploaded_file) -> io.BytesIO:
-    wb = load_workbook(uploaded_file)
-    for sheet in wb.worksheets:
-        for img in list(sheet._images):
-            sheet._images.remove(img)
-    buffer = io.BytesIO()
-    wb.save(buffer)
-    buffer.seek(0)
-    return buffer
+def split_codes(value: str) -> list[str]:
+    """
+    Ex.: 'GH82-26485A/26486A/26925A'
+    -> ['GH82-26485A', 'GH82-26486A', 'GH82-26925A']
+    """
+    base_match = re.match(r'([A-Z0-9]+)-(\d+)([A-Z])(?:/(.*))?', value)
+    if not base_match:
+        return [value]
+    prefix, first_num, suffix, rest = base_match.groups()
+    codes = [f"{prefix}-{first_num}{suffix}"]
+    if rest:
+        for part in rest.split('/'):
+            codes.append(f"{prefix}-{part}{suffix}")
+    return codes
 
-def expand_codes(code: str):
-    if pd.isna(code):
-        return []
-    match = re.match(r"^([A-Z0-9]+-)(.+)$", str(code))
-    if match:
-        prefix, rest = match.groups()
-        return [prefix + part for part in rest.split("/")]
-    return str(code).split("/")
+def round_qty(qty: float) -> int:
+    """
+    Rotunjește la setul {1, 2, 5, 10, 20, 50}.
+    Dacă depășește 50, rotunjește la cel mai apropiat multiplu de 50.
+    """
+    if qty <= 0:
+        return 0
+    steps = [1, 2, 5, 10, 20, 50]
+    for step in steps:
+        if qty <= step:
+            return step
+    return 50 * math.ceil(qty / 50)
 
-def normalize_excel(file_bytes: io.BytesIO, code_column: str):
-    df = pd.read_excel(file_bytes)
-    df.dropna(how="all", inplace=True)
-    df.dropna(axis=1, how="all", inplace=True)
-    df[code_column] = df[code_column].apply(expand_codes)
-    df = df.explode(code_column).reset_index(drop=True)
-    return df
+def normalize_and_order(
+    supplier_path: str,
+    stock_path: str,
+    out_path: str
+) -> None:
+    # -------- 1. Fișierul de la furnizor --------
+    df_sup = pd.read_excel(supplier_path, engine="openpyxl")
+    df_sup = df_sup.dropna(how="all").fillna("")
+    df_sup = df_sup[df_sup["Cod"].notna()]
 
-st.title("Normalizare fișier piese furnizor")
+    rows = []
+    for _, row in df_sup.iterrows():
+        codes = split_codes(str(row["Cod"]))
+        for code in codes:
+            new_row = row.copy()
+            new_row["Cod"] = code.strip()
+            rows.append(new_row)
+    df_norm = pd.DataFrame(rows)
 
-uploaded_file = st.file_uploader("Încarcă fișierul Excel", type=["xlsx"])
-
-if uploaded_file:
-    buffer = remove_images_to_buffer(uploaded_file)
-    df_preview = pd.read_excel(buffer)
-    code_col = st.selectbox("Alege coloana cu coduri", df_preview.columns)
-
-    buffer.seek(0)
-    df = normalize_excel(buffer, code_col)
-
-    desired = ["cod", "nume", "cantitate disponibila", "pret", "comanda"]
-    for i in range(len(df.columns), len(desired)):
-        df[desired[i]] = pd.NA
-    df = df.iloc[:, :len(desired)]
-    df.columns = desired
-    df["pret"] = pd.to_numeric(df["pret"], errors="coerce").fillna(0) * 5.1
-
-    st.success("Fișierul a fost normalizat!")
-
-    csv_bytes = df.to_csv(index=False).encode("utf-8")
-    st.download_button(
-        label="Descarcă CSV",
-        data=csv_bytes,
-        file_name="normalized.csv",
-        mime="text/csv",
+    # -------- 2. Mișcările de stoc --------
+    df_stock = pd.read_excel(
+        stock_path,
+        skiprows=9,          # începe de la rândul 10
+        usecols="B:H",       # col. B–H
+        engine="openpyxl"
     )
-else:
-    st.info("Încarcă un fișier Excel pentru a continua.")
+    df_stock.columns = [
+        "Nume Produs", "Cod", "Stoc initial",
+        "Intrari", "Iesiri", "Stoc final"
+    ]
+    df_stock = df_stock.dropna(subset=["Cod"])
+    df_stock["Cod"] = df_stock["Cod"].astype(str).strip()
+    df_stock["vandut"] = df_stock["Iesiri"].fillna(0)
+
+    # mapăm cantitatea vândută la cod
+    sold_map = df_stock.set_index("Cod")["vandut"]
+
+    # -------- 3. Calcul cantitate comandă --------
+    df_norm["comanda"] = (
+        df_norm["Cod"].map(sold_map).fillna(0).apply(round_qty)
+    )
+
+    # -------- 4. Export --------
+    df_norm.to_csv(out_path, index=False)
+
+if __name__ == "__main__":
+    normalize_and_order(
+        "intrare.xlsx",      # fișierul furnizor
+        "miscari.xlsx",      # mișcări de stoc
+        "iesire_comanda.csv" # rezultat pentru furnizor
+    )
