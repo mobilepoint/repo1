@@ -20,7 +20,8 @@ def split_codes(code: str):
 
 def normalize_apex(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(how="all").dropna(axis=1, how="all")          # elimină linii/coloane goale
-    df = df.rename(columns=str.lower)[["cod", "nume", "disponibil", "pret"]]
+    df.columns = [str(c).strip().lower() for c in df.columns]
+    df = df[["cod", "nume", "disponibil", "pret"]]
     df["pret"] = pd.to_numeric(df["pret"], errors="coerce").fillna(0) * 5.1
 
     rows = []
