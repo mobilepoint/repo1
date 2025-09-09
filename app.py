@@ -62,7 +62,7 @@ def main():
     smartbill_file = st.file_uploader("Încarcă fișierul Smartbill", type=["xls", "xlsx"])
 
     if apex_file and smartbill_file:
-                try:
+         try:
             apex_df = normalize_apex(pd.read_excel(apex_file))
         except ValueError as e:
             st.error(str(e))
