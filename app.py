@@ -1,4 +1,5 @@
 import io
+import os
 import pandas as pd
 import streamlit as st
 
@@ -32,7 +33,10 @@ smartbill_file = st.file_uploader("Fișier SmartBill (.xlsx, .xls)", type=["xlsx
 
 if apex_file and smartbill_file:
     apex_df = pd.read_csv(apex_file)
-    smart_df = pd.read_excel(smartbill_file)
+    if smartbill_file.name.endswith(".xls"):
+        smart_df = pd.read_excel(smartbill_file, engine="xlrd")
+    else:
+        smart_df = pd.read_excel(smartbill_file, engine="openpyxl")
 
     merged = (
         apex_df.merge(
