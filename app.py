@@ -1,53 +1,56 @@
-import math
+import io
 import pandas as pd
 import streamlit as st
 
-THRESHOLDS = [1, 3, 5, 10, 20, 50]
+ALLOWED_ROUNDINGS = [1, 3, 5, 10, 20, 50]
 
 
-def round_to_pack(qty: float) -> int:
-    """Rotunjește cantitatea la 1,3,5,10,20,50 (sau multiplu de 50 dacă e >50)."""
-    for t in THRESHOLDS:
-        if qty <= t:
-            return t
-    return math.ceil(qty / THRESHOLDS[-1]) * THRESHOLDS[-1]
+def round_to_allowed(value: float) -> int:
+    """Rotunjește la cea mai apropiată valoare din lista permisă."""
+    for threshold in ALLOWED_ROUNDINGS:
+        if value <= threshold:
+            return threshold
+    return ALLOWED_ROUNDINGS[-1]
 
 
-st.title("Generator comenzi APEX")
+def compute_order(row: pd.Series) -> int:
+    iesiri = row.get("iesiri", 0)
+    stoc_final = row.get("stoc final", 0)
 
-apex_file = st.file_uploader("Încarcă fișierul APEX (.csv)", type="csv")
-smartbill_file = st.file_uploader(
-    "Încarcă raportul SmartBill (.xls / .xlsx)", type=["xls", "xlsx"]
-)
+    if pd.isna(iesiri) or pd.isna(stoc_final):
+        return 0
+    if iesiri < stoc_final and iesiri > 0:
+        return round_to_allowed(iesiri)
+    return 0
+
+
+st.title("Generator comandă APEX")
+st.write("Încarcă fișierele APEX (CSV) și SmartBill (Excel).")
+
+apex_file = st.file_uploader("Fișier APEX (.csv)", type=["csv"])
+smartbill_file = st.file_uploader("Fișier SmartBill (.xlsx, .xls)", type=["xlsx", "xls"])
 
 if apex_file and smartbill_file:
-    # 1. APEX
-    apex_df = pd.read_csv(apex_file)  # cod, nume, disponibil, pret, comanda
+    apex_df = pd.read_csv(apex_file)
+    smart_df = pd.read_excel(smartbill_file)
 
-    # 2. SmartBill
-    sb_df = pd.read_excel(smartbill_file, header=9)  # primele 9 rânduri ignorate
-    sb_df.columns = (
-        sb_df.columns.str.strip().str.lower().str.replace(" ", "_")
-    )  # normalizare nume coloane
-    sb_df = sb_df[["cod", "iesiri", "stoc_final"]]
-
-    # 3. Combinare
-    data = apex_df.merge(sb_df, on="cod", how="left")
-    data[["iesiri", "stoc_final"]] = data[["iesiri", "stoc_final"]].fillna(0)
-
-    # 4. Calcul „comanda”
-    def calc_comanda(row):
-        if row["stoc_final"] > row["iesiri"]:
-            return 0
-        return round_to_pack(row["iesiri"])
-
-    data["comanda"] = data.apply(calc_comanda, axis=1).astype(int)
-
-    # 5. Afișare + export
-    st.dataframe(data)
-    csv_bytes = data.to_csv(index=False).encode("utf-8")
-    st.download_button(
-        "Descarcă CSV pentru APEX", csv_bytes, "apex_comenzi.csv", "text/csv"
+    merged = (
+        apex_df.merge(
+            smart_df[["cod", "iesiri", "stoc final"]],
+            on="cod",
+            how="left",
+        )
     )
-else:
-    st.info("Încarcă ambele fișiere pentru a genera comanda.")
+    merged["comanda"] = merged.apply(compute_order, axis=1)
+
+    st.subheader("Rezultat")
+    st.dataframe(merged)
+
+    csv_buffer = io.StringIO()
+    merged.to_csv(csv_buffer, index=False)
+    st.download_button(
+        label="Descarcă fișierul pentru furnizor (CSV)",
+        data=csv_buffer.getvalue(),
+        file_name="apex_comanda.csv",
+        mime="text/csv",
+    )
