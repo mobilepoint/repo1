@@ -20,7 +20,7 @@ def compute_order(row: pd.Series) -> int:
 
     if pd.isna(iesiri) or pd.isna(stoc_final):
         return 0
-    if iesiri < stoc_final and iesiri > 0:
+    if iesiri > stoc_final and iesiri > 0:
         return round_to_allowed(iesiri)
     return 0
 
